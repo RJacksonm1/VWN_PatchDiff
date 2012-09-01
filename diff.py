@@ -1,4 +1,11 @@
-import os, subprocess, re, time, sys, shutil, urllib2, chardet
+import os
+import subprocess
+import re
+import time
+import sys
+import shutil
+import chardet
+import fnmatch
 from subprocess import Popen, PIPE
 from prettydiff2 import poot
 
@@ -163,6 +170,8 @@ def main():
         print 'Please specify the game to diff:'
         print supported_games()
         sys.exit(1)
+
+    # Try load config for specified game.
     try:
         fallback = config["fallback"]
         working = config[sys.argv[1]]
@@ -170,9 +179,7 @@ def main():
         repo = working.get("repo", fallback["repo"])
         workingRepoDir = working.get("workingRepoDir", fallback["workingRepoDir"])
         tempDir = working.get("tempDir", fallback["tempDir"])
-        hlExtractDir = working.get("hlExtractDir", fallback["hlExtractDir"])
         gameFolder = working.get("gameFolder", fallback["gameFolder"])
-        vpks = working.get("vpks", fallback["vpks"])
         diffOutput = working.get("diffOutput", fallback["diffOutput"])
         repoUser = working.get("repoUser", fallback["repoUser"])
         repoPassword = working.get("repoPassword", fallback["repoPassword"])
@@ -180,14 +187,18 @@ def main():
         wikiApi = working.get("wikiApi", fallback["wikiApi"])
         wikiUsername = working.get("wikiUsername", fallback["wikiUsername"])
         wikiPassword = working.get("wikiPassword", fallback["wikiPassword"])
-
+        hlExtract = working.get("hlExtract", fallback["hlExtract"])
         name = os.path.split(gameFolder)[1]
+
     except:
         print 'Error: First argument must be a supported game:'
         print supported_games()
         sys.exit(1)
 
+    # Get patch title - get all user input before doing work.
     patchTitle = getPatchName(patchNameFormat)
+
+    auto_wiki = raw_input("Auto-submit diff to wiki upon completion?").lower() != "n"
 
     # Create temp directory
     if os.path.isdir(tempDir) != True:
@@ -199,6 +210,8 @@ def main():
         shutil.rmtree(tempDir)
         print "Sniper: \t Thanks for standin still, ganker!"
         os.mkdir(tempDir)
+
+    # Copy files to temp dir.
     print "Copying files to temp directory"
     copyToTempdir = r'xcopy "{source!s}" "{destination!s}" /E /Q'.format(source = gameFolder, destination = tempDir)
     returnCopyToTempdir = subprocess.call(copyToTempdir, shell=True)
@@ -207,6 +220,35 @@ def main():
         print 'Error: Shutdown the Steam client first dummkopf'
         sys.exit(1)
 
+    # Extract VPKs
+    vpks = []
+    for root, dirs, files in os.walk(tempDir):
+        for f in files:
+            if fnmatch.fnmatch(f, "*.vpk"):
+                vpks.append(root + os.sep + f)
+
+    vpk_dirs = []
+    for root, dirs, files in os.walk(tempDir):
+        for f in files:
+            if fnmatch.fnmatch(f, "*_dir.vpk"):
+                vpk_dirs.append(root + os.sep + f)
+
+    for vpk in vpk_dirs:
+        print "Extracting vpk: {}".format(vpk)
+
+        command = "{hle} -s -p {vpk} -d {dest} -e root".format(hle = hlExtract, vpk = vpk, dest = tempDir)
+        return_code = subprocess.call(command)
+        assert return_code == 0
+
+        os.remove(vpk)
+        shutil.copytree(tempDir + os.sep + "root", vpk)
+        shutil.rmtree(tempDir + os.sep + "root")
+
+    for vpk in vpks:
+        if os.path.isfile(vpk):
+            os.remove(vpk)
+
+    #Find deleted files, remove them from svn
     missingfiles = compare(workingRepoDir + os.sep + name, tempDir)
     if len(missingfiles) != 0:
         print "\nFiles removed from files:"
@@ -219,12 +261,12 @@ def main():
     print "\nConverting relevant files to utf-8 and decrypting ctx files"
     txtToUtf8(tempDir)
 
+    # Moving files to working repository.
     print "\nMoving files to working repository"
-    # Moving files to repository.
     moveDirectory(tempDir, workingRepoDir + os.sep + name)
 
-    print "\nDeleting temporary directory."
     # Delete temp directories
+    print "\nDeleting temporary directory."
     shutil.rmtree(tempDir)
 
     # Commit changes to SVN repo
@@ -248,8 +290,9 @@ def main():
     stdout, stderr = q.communicate()
     open(diffOutput, "wb").write(stdout)
 
-    #Commit to wiki
-    raw_input("Ready to submit to Wiki.  Hit enter to go ahead.")
+    # Commit to wiki
+    if not auto_wiki:
+        raw_input("Ready to submit to Wiki.  Hit enter to go ahead.")
     print "\nSubmitting prettydiff to wiki"
     poot(wikiApi, wikiUsername, wikiPassword, patchTitle, diffOutput)
 
