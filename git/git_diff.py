@@ -189,7 +189,7 @@ def main():
     # Get patch title - get all user input before doing work.
     patchTitle = getPatchName(patchNameFormat)
 
-    auto_wiki = raw_input("Auto-submit diff to wiki upon completion?").lower() != "n"
+    auto_wiki = raw_input("Submit diff to wiki upon completion?").lower() != "n"
     start_time = time.mktime(time.gmtime())
 
     # Create temp directory
@@ -245,10 +245,10 @@ def main():
     if len(missingfiles) != 0:
         print "\nFiles removed from files:"
         for f in missingfiles:
-            if os.path.isdir(f):
-                shutil.rmtree(f)
-            else:
-                os.remove(f)
+                if os.path.isdir(f):
+                    shutil.rmtree(f)
+                elif os.path.isfile(f):
+                    os.remove(f)
     else:
         print "\nNo files removed from files."
 

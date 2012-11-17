@@ -5,7 +5,6 @@
 import re
 import wikitools
 import subprocess
-
 lineMatch = re.compile(r'^@@\s*-(\d+),\d+\s*\+(\d+),(\d+)\s*@@')
 lineMatch2 = re.compile(r'^@@\s*-(\d+)\s*\+(\d+),(\d+)\s*@@')
 lineMatch3 = re.compile(r'^@@\s*-(\d+),\d+\s*\+(\d+)\s*@@')
@@ -14,6 +13,8 @@ binaryFileRe = re.compile(r'Binary files (.+) and (.+) differ')
 textFileRe = re.compile(r'--- (.[^\n]+)\n\+\+\+ (.[^\n]+)\n(.+)', re.DOTALL)
 statusRe = re.compile(r'^(\w)\s+\"(.+)\"')
 statusReRenamed = re.compile(r'^R\s+\"(.+)\"\s+->\s+\"(.+)\"')
+
+SIZE_LIMIT = None # Global var, to be set in poot() and used in format_file()
 
 def u(s):
     if type(s) is type(u''):
@@ -106,6 +107,7 @@ def pootDiff(wiki, patchName, gitRepo):
     files.sort(cmp=cmpFiles)
 
     def formatFile(f):
+        global SIZE_LIMIT
         isDelete = f['isDeleted']
         isAdd = f['isNew']
         isBinary = f['isBinary']
@@ -229,13 +231,16 @@ def pootDiff(wiki, patchName, gitRepo):
             finalText = u(u''.join(diffRet))
             n = 0
             success = False
-            while n < 50 and not success:
-                try:
-                    wikitools.page.Page(wiki, subPageName).edit(finalText, summary=u'Diff of file "' + f['name'] + u'" for patch [[:' + patchName + u']].', minor=True, bot=True, skipmd5=True, timeout=60)
-                    success = True
-                except:
-                    print 'Failed to edit, attempt %s of 50' % str(n)
-                    n += 1
+            if len(finalText) < SIZE_LIMIT:
+                while n < 10 and not success:
+                    try:
+                        #wikitools.page.Page(wiki, subPageName).edit(finalText, summary=u'Diff of file "' + f['name'] + u'" for patch [[:' + patchName + u']].', minor=True, bot=True, skipmd5=True, timeout=60)
+                        tempPage = wikitools.page.Page(wiki, subPageName)
+                        tempPage.edit(finalText, summary=u'Diff of file "' + f['name'] + u'" for patch [[:' + patchName + u']].', minor=True, bot=True, skipmd5=True, timeout=60)
+                        success = True
+                    except:
+                        print 'Failed to edit, attempt %s of 10' % str(n)
+                        n += 1
             if not success:
                 wikitools.page.Page(wiki, subPageName).edit(u'<div class="diff-file">File too large to diff</div>', summary=u'Diff of file "' + f['name'] + u'" for patch [[:' + patchName + u']].', minor=True, bot=True, skipmd5=True)
         ret += u'</div>'
@@ -249,16 +254,18 @@ def pootDiff(wiki, patchName, gitRepo):
         print d
     print 'Editing patch diff page:', u'Template:PatchDiff/' + patchName
     n = 0
-    while n < 50:
+    while n < 10:
         try:
             wikitools.page.Page(wiki, u'Template:PatchDiff/' + patchName).edit(patchDiff, summary=u'Diff of patch [[:' + patchName + u']].', minor=True, bot=True)
             break
         except:
-            print 'Failed to open page, attempt %s of 50' % str(n)
+            print 'Failed to open page, attempt %s of 10' % str(n)
             n += 1
 
 
-def poot(wikiApi, wikiUsername, wikiPassword, patchName, gitRepo):
+def poot(wikiApi, wikiUsername, wikiPassword, patchName, gitRepo, sizeLimit = 2097152):
+    global SIZE_LIMIT
+    SIZE_LIMIT = sizeLimit # Defaults to 2MB - default MW limit
     wiki = wikitools.wiki.Wiki(wikiApi)
     if wiki.login(wikiUsername, wikiPassword):
         return pootDiff(wiki, patchName, gitRepo)
