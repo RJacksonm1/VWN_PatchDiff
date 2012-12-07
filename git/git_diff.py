@@ -10,17 +10,6 @@ from prettydiff import poot
 
 from config import config
 
-
-def supported_games():
-    output = ""
-    for game in config:
-        if game != "fallback":
-            output += '\t {game!s}'.format(game = game)
-            if game is not config.keys()[len(config) - 1]:
-                output += "\n"
-    return output
-
-
 def compare(sourceDir, targetDir, ignorePattern):
     """ Compare two directories and return list of missing files from the target directory """
     missing = []
@@ -129,19 +118,26 @@ def returnEncoding(string):
 
 
 def getPatchName(format):
-    timeInUS = time.time() - (8 * 60 * 60)
-    suggestion = time.strftime(format, time.localtime(timeInUS))
-    if str(raw_input("Please confirm patch page name: {suggestion!s}  y\\n ".format(suggestion=suggestion))) == "y":
-        semifinal = suggestion
+    choices = []
+    choice_modifiers = [24, 0, -24, -48, -72]
+
+    for mod in choice_modifiers:
+        suggestion = time.strftime(format, time.localtime(time.time() + (mod * 60 * 60)))
+        choices.append(suggestion)
+    choices.append("Custom")
+    choice = get_choice(choices)
+    if choice == "Custom":
+        name = str(raw_input("Manually enter the correct page name: "))
     else:
-        semifinal = str(raw_input("Manually enter the correct page name: "))
+        name = choice
+
+    if str(raw_input("Please confirm patch page name: {}  y\\n ".format(name))) != "y":
+        suck()
 
     if str(raw_input("Is this the first patch of the day? y\\n ")) == "n":
-        final = semifinal + " {n}".format(n=str(raw_input("If this is the nth patch of the day, what is n?")))
-    else:
-        final = semifinal
+        name = name + " {n}".format(n=str(raw_input("If this is the nth patch of the day, what is n?")))
 
-    return final
+    return name
 
 
 def txtToUtf8(dir):
@@ -157,18 +153,47 @@ def txtToUtf8(dir):
                 except:
                     pass
 
+def suck():
+    raw_input("You suck")
+    sys.exit()
+
+def get_choice(choices):
+    index = 1
+    for item in choices:
+        print "\t{}: {}".format(index, item)
+        index += 1
+
+    choice_input = raw_input("Input the number of your choice: ")
+    if choice_input.isdigit():
+        choice_input = int(choice_input)
+        if choice_input <= 0 or choice_input > len(choices):
+            suck()
+        else:
+            choice = choices[choice_input-1]
+    else:
+        suck()
+    return choice
 
 def main():
+    choice = None
+
     # Check to see which game has been specified via the launch arguments.
     if len(sys.argv) < 2:
-        print 'Please specify the game to diff:'
-        print supported_games()
-        sys.exit(1)
+        print "Please specify the game to diff"
+        choices = []
+        for game in config:
+            if game != "fallback":
+                choices.append(game)
+        choice = get_choice(choices)
+
 
     # Try load config for specified game.
     try:
         fallback = config["fallback"]
-        working = config[sys.argv[1]]
+        if choice != None:
+            working = config[choice]
+        else:
+            working = config[sys.argv[1]]
 
         workingRepoDir = working.get("workingRepoDir", fallback["workingRepoDir"])
         tempDir = working.get("tempDir", fallback["tempDir"])
